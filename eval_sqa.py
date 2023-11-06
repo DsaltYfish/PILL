@@ -235,14 +235,20 @@ def print_scores(scores):
 
 def load(
     ckpt_dir: str,
-    llm_model:str,
+llm_model:str,
     tokenizer_path: str,
     adapter_path: str,
     local_rank: int,
     world_size: int,
     max_seq_len: int,
     max_batch_size: int,
-    use_vicuna: bool
+    adapter_type: str,
+    adapter_dim:int,
+    adapter_scale:float,
+    hidden_proj:int,
+    visual_adapter_type: str,
+    temperature: float,
+use_vicuna: bool
 ) -> Generator:
     start_time = time.time()
     checkpoint, tokenizer, params = _load_and_redistribute_checkpoint(ckpt_dir, llm_model)
@@ -287,12 +293,12 @@ def get_pred_idx(prediction, choices, options):
         return random.choice(range(len(choices)))
 
 def main(
-    ckpt_dir: str='/data/zfy/llama/',
-    tokenizer_path: str='/data/zfy/llama/tokenizer.model',
-    adapter_path: str='/data/zfy/output_dir/checkpoint-19.pth',
-    # adapter_path: str='/data/zfy/output_dir/91.23.pth',
-    data_root:str='/data/zfy/dataset/scienceQA',
-    caption_file:str='/data/zfy/dataset/scienceQA/captions.json',
+    ckpt_dir: str='/root/llama/',
+    tokenizer_path: str='/root/llama/tokenizer.model',
+    adapter_path: str='/root/output_dir/checkpoint-19.pth',
+    # adapter_path: str='/root/output_dir/91.23.pth',
+    data_root:str='/root/dataset/scienceQA',
+    caption_file:str='/root/dataset/scienceQA/captions.json',
     max_seq_len: int=512,
     max_batch_size: int=32,
     llm_model:str='llama-2-7b-chat',
@@ -302,6 +308,13 @@ def main(
     prompt_format='QCM-ALE',
     use_caption=False,
     options=["A", "B", "C", "D", "E"],
+    adapter_type='repattn',
+    adapter_dim=8,
+    adapter_scale=1,
+    n_prompt=10,
+    hidden_proj=128,
+    visual_adapter_type='normal',
+    temperature=10.,
     use_vicuna=False,
 ):
     print(max_batch_size,max_seq_len)
@@ -312,7 +325,9 @@ def main(
     if local_rank > 0:
         sys.stdout = open(os.devnull, "w")
 
-    generator = load(ckpt_dir,llm_model, tokenizer_path, adapter_path, local_rank, world_size, max_seq_len, max_batch_size, use_vicuna)
+    generator = load(ckpt_dir,llm_model, tokenizer_path, adapter_path, local_rank, world_size, max_seq_len, max_batch_size,
+                     adapter_type,adapter_dim,adapter_scale,hidden_proj,visual_adapter_type,
+                     temperature,use_vicuna)
 
     print('split: ', split)
     problems = json.load(open(os.path.join(data_root, 'problems.json')))
@@ -353,7 +368,7 @@ def main(
         for qid in batch_qids:
             prompt,_ = build_prompt(problems, qid, prompt_args)
             ### instruct添加的地方
-            prompt = system_message + "Image:N/A\n" + prompt + "[/INST]"
+            prompt = system_message + "Image:N/A.\n" + prompt + "[/INST]"
             answer=problems[qid]["answer"]
             if problems[qid]['image'] is not None:
                 image = Image.open(os.path.join(image_path, qid, 'image.png')).convert('RGB')
